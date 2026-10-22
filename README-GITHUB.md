@@ -70,6 +70,26 @@ python3 "$WORK/prepare_fresh_install.py" --apply
 '
 ```
 
+2й вариант
+bash -c '
+set -Eeuo pipefail
+umask 077
+
+WORK="$(mktemp -d /root/remnanode-reset.XXXXXX)"
+
+curl -fSL --proto "=https" --proto-redir "=https" \
+  --connect-timeout 15 --max-time 60 \
+  "https://raw.githubusercontent.com/tropka2020/remnanode-ubuntu-installer/main/prepare_fresh_install.py" \
+  -o "$WORK/prepare_fresh_install.py"
+
+printf "%s  %s\n" \
+  "873177f2c2777da93929e69ba59d7617237cc871924e087e93c6e6efde69a1a5" \
+  "$WORK/prepare_fresh_install.py" | sha256sum -c -
+
+python3 "$WORK/prepare_fresh_install.py" --apply
+'
+
+
 После сообщения **«Рабочие пути освобождены»** выполните команду из раздела **«Первая установка»**. Если скрипт отказал, остановитесь и изучите причину — не обходите проверки, не запускайте prune/reset.
 
 Если хотите действительно полностью чистую ОС, это отдельное действие: переустановка Ubuntu в панели провайдера с потерей данных. Этот скрипт её не выполняет.
