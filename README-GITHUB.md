@@ -1,48 +1,38 @@
 # Remnawave Node — Ubuntu 24.04
 
-Установщик Node, Caddy и сайта NORTH / STILL / RITUAL. В каждом шаблоне — пять полных статей. Короткий мастер, автономное оформление, logrotate, UFW с проверкой SSH, новый Fail2ban jail и штатный BBR при поддержке ядра.
+Установщик Node, Caddy и восьми самостоятельных сайтов: NORTH, STILL, RITUAL, INDEX, FORM, AFTERLIGHT, COMMON и ORBIT. В каждом из восьми шаблонов — пять полных статей. Короткий мастер, автономное оформление, logrotate, UFW с проверкой SSH, новый Fail2ban jail и штатный BBR при поддержке ядра.
 
 > Сначала испытайте сборку на одноразовой Ubuntu24.04 со snapshot и консолью провайдера. Автотесты не заменяют реальную проверку Docker/ACME/Fail2ban/nftables и изменения разделов.
 
-## Первая установка на новом сервере
+## Первая установка на новом сервере из GitHub
 
-**Весь блок ниже — одна команда.** Вставьте его целиком в терминал Ubuntu. Тег и Release не требуются.
+В репозиторий нужно загрузить с точными именами `download-install.sh`, ZIP релиза и `prepare_fresh_install.py`. После загрузки ZIP вычислите его SHA256 и замените **оба заполнителя архива** (`ZIP_URL` и `ZIP_SHA`) ниже. Не подставляйте выдуманные URL или хеши: этот пример намеренно не запускается до публикации вашего ZIP. `HELPER_URL` и `HELPER_SHA` также замените на фактические URL/SHA опубликованного helper-файла.
+
+**Весь блок ниже — одна команда.** Он скачивает helper отдельно, проверяет его SHA256, а затем запускает его с двумя аргументами — URL архива и SHA256 архива. Ответ helper не передаётся в shell через pipe.
 
 ```bash
-sudo bash -c '
+sudo --preserve-env=SSH_CONNECTION bash -c '
 set -Eeuo pipefail
 umask 077
-URL="https://raw.githubusercontent.com/tropka2020/remnanode-ubuntu-installer/main/remnanode-ubuntu24-f2bfix.zip"
-SHA="77c77d915ebd59db6c2e78889018974421ca29e078bf2cd53063cd13966ad5ea"
-TARGET="/opt/remnanode-local"
-command -v curl >/dev/null || { printf "Требуется curl: apt-get update && apt-get install -y curl\n" >&2; exit 1; }
-command -v python3 >/dev/null || { printf "Требуется Python3.\n" >&2; exit 1; }
-if [ -e "$TARGET" ] || [ -L "$TARGET" ]; then
-  printf "Каталог %s уже существует. Для неудачной попытки сначала раздел Повторная установка.\n" "$TARGET" >&2
-  exit 1
-fi
-WORK="$(mktemp -d /opt/.remnanode-download.XXXXXX)"
+HELPER_URL="https://raw.githubusercontent.com/REPLACE_OWNER/REPLACE_REPOSITORY/REPLACE_REF/download-install.sh"
+HELPER_SHA="REPLACE_AFTER_UPLOADING_DOWNLOAD_INSTALL_SH"
+ZIP_URL="https://raw.githubusercontent.com/REPLACE_OWNER/REPLACE_REPOSITORY/REPLACE_REF/REPLACE_RELEASE_ZIP_NAME.zip"
+ZIP_SHA="REPLACE_AFTER_UPLOADING_ZIP"
+WORK="$(mktemp -d /opt/.remnanode-helper.XXXXXX)"
 trap '\''rm -rf -- "$WORK"'\'' EXIT
-printf "\n[1/4] Скачивание\n"
-curl -fSL --proto "=https" --proto-redir "=https" --connect-timeout 15 --max-time 300 --retry 3 "$URL" -o "$WORK/installer.zip"
-printf "\n[2/4] Проверка архива\n"
-printf "%s  %s\n" "$SHA" "$WORK/installer.zip" | sha256sum -c -
-printf "\n[3/4] Распаковка и проверка файлов\n"
-python3 -m zipfile -e "$WORK/installer.zip" "$WORK"
-(cd "$WORK/remnanode-local" && sha256sum -c SHA256SUMS)
-if [ -e "$TARGET" ] || [ -L "$TARGET" ]; then
-  printf "Назначение занято. Ничего не заменено.\n" >&2
-  exit 1
-fi
-mv -T -n -- "$WORK/remnanode-local" "$TARGET"
-[ ! -e "$WORK/remnanode-local" ] || { printf "Назначение занято.\n" >&2; exit 1; }
-printf "\n[4/4] Мастер установки\n"
-cd "$TARGET"
-bash install-remnanode.sh
+command -v curl >/dev/null || { printf "Требуется curl.\n" >&2; exit 1; }
+printf "Скачивание проверяемого helper\n"
+curl --disable --fail --show-error --silent --location --proto "=https" --proto-redir "=https" \
+  --connect-timeout 30 --max-time 60 --output "$WORK/download-install.sh" -- "$HELPER_URL"
+printf "%s  %s\n" "$HELPER_SHA" "$WORK/download-install.sh" | sha256sum -c -
+printf "Запуск helper с URL архива и SHA256 архива\n"
+bash "$WORK/download-install.sh" "$ZIP_URL" "$ZIP_SHA"
 '
 ```
 
-Если вошли под root, а sudo отсутствует, замените только начало `sudo bash -c` на `bash -c`.
+Замените все `REPLACE_*` до вставки блока. `ZIP_SHA` — SHA256 именно загруженного ZIP, `HELPER_SHA` — SHA256 именно загруженного `download-install.sh`; это не SHA256 из внутреннего `SHA256SUMS`. Helper сам проверяет внешний SHA архива, безопасное содержимое ZIP и все внутренние контрольные суммы, после чего запускает wizard из `/opt/remnanode-local`.
+
+Если вошли под root, а sudo отсутствует, замените только начало `sudo --preserve-env=SSH_CONNECTION bash -c` на `bash -c`.
 
 ## Повторная установка после ошибки
 
@@ -81,6 +71,7 @@ python3 "$WORK/prepare_fresh_install.py" --apply
 - Домен с A-записью прямо на VPS, без CDN/proxy; в текущем IPv4-мастере AAAA не допускается.
 - IPv4 панели и SECRET_KEY из формы добавления ноды.
 - Firewall провайдера разрешает SSH, TCP80/443; API2222 только панели.
+- Xray Torrent Blocker использует последний upstream installer `kutovoys/xray-torrent-blocker`, `/var/log/remnanode/access.log` и выбор `iptables`; его `/opt/tblocker/config.yaml` и systemd unit создаёт штатный upstream installer, а не наш код.
 
 До вопросов мастер проверяет полный размер `/`. При >=6GiB раздел не меняется. При меньшем размере допускается авторасширение только подтверждённого прямого последнего ext4-раздела: уже выделенный диск должен предоставлять место для раздела >=15GiB, утилиты growpart/resize2fs должны быть установлены. План показывается до `УСТАНОВИТЬ`, изменение выполняется после подтверждения и lock до APT/Docker. Рост — до доступного конца, не ровно15GiB; на диске30GiB результат будет около30GiB. Создаётся приватный журнал и table dump. Автоматического сжатия, форматирования или дискового rollback нет.
 
@@ -88,7 +79,7 @@ LVM/RAID/шифрование/неизвестная схема и staleGPT не
 
 ## Вопросы и процесс
 
-Мастер спрашивает домен, IPv4 панели, скрытый SECRET_KEY, шаблон1/2/3 и подтверждение. АВТОНОМНО выбирается автоматически, название и оформление — из выбранной семьи. Отсутствие повторов между независимыми серверами не гарантируется.
+Мастер спрашивает четыре значения: домен, IPv4 панели, скрытый SECRET_KEY и тему 1–8 (1 NORTH, 2 STILL, 3 RITUAL, 4 INDEX, 5 FORM, 6 AFTERLIGHT, 7 COMMON, 8 ORBIT), затем просит одно подтверждение общей сводки. В каждом из восьми шаблонов ровно пять полных статей, а также главная, список материалов и страница о журнале. АВТОНОМНО выбирается автоматически, название и оформление — из выбранной темы. Отсутствие повторов между независимыми серверами не гарантируется.
 
 Ручной запрос `SSH РАБОТАЕТ` убран. После применения UFW мастер автоматически повторно проверяет SSH-listeners, текущий SSH_CONNECTION и ожидаемые правила до отмены watchdog. Это локальная проверка, не замер внешней доступности; сохраняйте рабочее SSH-окно и консоль провайдера. Галочки показывают законченные этапы, стрелка — текущий; каждые10с есть heartbeat ожидания. Это не точный процент Docker-слоёв. Секретные argv/stdout/stderr не печатаются.
 
@@ -111,12 +102,17 @@ selfsteal restart --confirm
 selfsteal renew-check
 selfsteal logs --kind visits --lines 100
 selfsteal logs --kind errors --lines 100
-selfsteal template --template 1 --confirm
-selfsteal template --template 2 --confirm
-selfsteal template --template 3 --confirm
+selfsteal template --template 1 --confirm  # NORTH
+selfsteal template --template 2 --confirm  # STILL
+selfsteal template --template 3 --confirm  # RITUAL
+selfsteal template --template 4 --confirm  # INDEX
+selfsteal template --template 5 --confirm  # FORM
+selfsteal template --template 6 --confirm  # AFTERLIGHT
+selfsteal template --template 7 --confirm  # COMMON
+selfsteal template --template 8 --confirm  # ORBIT
 ```
 
-В меню пункт8 меняет шаблон с private backup/откатом и кратким перерывом Caddy. Нода, профиль, ключи и certificate volumes не заменяются. Caddy продлевает сертификаты автоматически; renew-check не удаляет их ради принудительного перевыпуска. Manager живёт в `/usr/local/lib/remnanode-manager`, wrapper в `/usr/local/bin/selfsteal`. Чужая команда не перезаписывается.
+В меню пункт 8 меняет шаблон с private backup/откатом и кратким перерывом Caddy; допустимы темы 1–8. Нода, профиль, ключи и certificate volumes не заменяются. Caddy продлевает сертификаты автоматически; renew-check не удаляет их ради принудительного перевыпуска. Manager живёт в `/usr/local/lib/remnanode-manager`, wrapper в `/usr/local/bin/selfsteal`. Чужая команда не перезаписывается.
 
 ## Защита и скорость
 
@@ -148,8 +144,10 @@ BBR проверяется и включается штатным модулем
 
 ```text
 README.md
-remnanode-ubuntu24-f2bfix.zip
+README-GITHUB.md
+download-install.sh
+<имя-релизного-ZIP>.zip
 prepare_fresh_install.py
 ```
 
-После замены ZIP/скрипта на другую сборку обновите соответствующий SHA в командах README. Не отключайте проверку. Внутренний SHA256SUMS находится в архиве; скачивать его отдельно для запуска не требуется.
+После загрузки ZIP и helper обновите в блоке первой установки заполнители `HELPER_URL`, `HELPER_SHA`, `ZIP_URL` и `ZIP_SHA` фактическими URL/SHA. Не отключайте проверку и не публикуйте выдуманный финальный URL/SHA. `ZIP_SHA` — внешний SHA256 архива; внутренний `SHA256SUMS` находится в архиве и helper проверяет его сам. `prepare_fresh_install.py` скачивается отдельной проверяемой командой ниже.
